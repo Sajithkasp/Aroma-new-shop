@@ -24,6 +24,7 @@ interface AuthUser {
   email: string
   name: string
   avatar_url?: string
+  is_verified_oauth?: boolean
 }
 
 export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: Fragrance) => void }) {
@@ -37,12 +38,16 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
   const [authEmailInput, setAuthEmailInput] = useState('')
   const [authNameInput, setAuthNameInput] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const { totalCount, openCart } = useCart()
 
-  // STRICT REQUIREMENT: Admin access is ONLY visible for sajith.kasp@gmail.com
+  // STRICT REQUIREMENT: Admin access is ONLY granted if authenticated via Google OAuth AND email matches sajith.kasp@gmail.com
   const isAdmin = Boolean(
-    user?.email && user.email.toLowerCase().trim() === APP_CONFIG.ADMIN_EMAIL.toLowerCase().trim()
+    user?.is_verified_oauth &&
+    user?.email &&
+    user.email.toLowerCase().trim() === APP_CONFIG.ADMIN_EMAIL.toLowerCase().trim()
   )
 
   const announcements =
@@ -63,18 +68,7 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
   useEffect(() => {
     const checkInitialSession = async () => {
       try {
-        // Check local storage for persistent guest/customer sign-in
-        const storedCustomer = localStorage.getItem('aroma_auth_customer')
-        if (storedCustomer) {
-          try {
-            setUser(JSON.parse(storedCustomer))
-            setLoading(false)
-            return
-          } catch {
-            // ignore
-          }
-        }
-
+        // Check active Supabase OAuth session first
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
           const u = session.user
@@ -83,12 +77,32 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
             u.user_metadata?.picture ||
             getAvatarFromEmail(u.email, u.user_metadata?.full_name || u.email?.split('@')[0])
           const name = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Fragrance Lover'
-          setUser({
+          const verifiedUser: AuthUser = {
             id: u.id,
             email: u.email || '',
             name,
-            avatar_url: avatar
-          })
+            avatar_url: avatar,
+            is_verified_oauth: true
+          }
+          setUser(verifiedUser)
+          localStorage.setItem('aroma_auth_customer', JSON.stringify(verifiedUser))
+          setLoading(false)
+          return
+        }
+
+        // Fallback: Check local storage for customer sign-in
+        const storedCustomer = localStorage.getItem('aroma_auth_customer')
+        if (storedCustomer) {
+          try {
+            const parsed = JSON.parse(storedCustomer)
+            // Safety: Never restore unverified local storage as verified admin
+            if (parsed.email?.toLowerCase().trim() === APP_CONFIG.ADMIN_EMAIL.toLowerCase().trim() && !session) {
+              parsed.is_verified_oauth = false
+            }
+            setUser(parsed)
+          } catch {
+            // ignore
+          }
         }
       } catch (error) {
         console.error(error)
@@ -111,10 +125,14 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
           id: u.id,
           email: u.email || '',
           name,
-          avatar_url: avatar
+          avatar_url: avatar,
+          is_verified_oauth: true
         }
         setUser(authObj)
         localStorage.setItem('aroma_auth_customer', JSON.stringify(authObj))
+      } else if (_event === 'SIGNED_OUT') {
+        setUser(null)
+        localStorage.removeItem('aroma_auth_customer')
       }
     })
 
@@ -127,14 +145,28 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
 
   const handleGoogleLogin = async () => {
     try {
+      setGoogleLoading(true)
+      setAuthError(null)
       const currentUrl = typeof window !== 'undefined' ? window.location.origin : ''
-      await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: currentUrl }
+        options: {
+          redirectTo: currentUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account'
+          }
+        }
       })
-    } catch {
-      // Fallback: prompt email
-      setAuthModalOpen(true)
+      if (error) {
+        console.error('Google Sign-in Error:', error.message)
+        setAuthError(error.message)
+        setGoogleLoading(false)
+      }
+    } catch (err: any) {
+      console.error(err)
+      setAuthError(err?.message || 'Failed to initiate Google login.')
+      setGoogleLoading(false)
     }
   }
 
@@ -150,7 +182,8 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
       id: `usr-${Date.now()}`,
       email,
       name,
-      avatar_url: avatar
+      avatar_url: avatar,
+      is_verified_oauth: false // Plain email form is customer only, never grants admin access
     }
 
     setUser(customerUser)
@@ -158,18 +191,6 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
     setAuthModalOpen(false)
     setAuthEmailInput('')
     setAuthNameInput('')
-  }
-
-  const handleQuickLoginAsAdmin = () => {
-    const adminUser: AuthUser = {
-      id: 'admin-sajith',
-      email: APP_CONFIG.ADMIN_EMAIL,
-      name: 'Sajith (Store Owner)',
-      avatar_url: getAvatarFromEmail(APP_CONFIG.ADMIN_EMAIL, 'Sajith')
-    }
-    setUser(adminUser)
-    localStorage.setItem('aroma_auth_customer', JSON.stringify(adminUser))
-    setAuthModalOpen(false)
   }
 
   const handleLogout = async () => {
@@ -386,36 +407,56 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
               </p>
             </div>
 
+            {authError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-xs flex items-start gap-2 animate-fade-in">
+                <span className="text-sm">⚠️</span>
+                <div>
+                  <p className="font-semibold">Sign-in Notice</p>
+                  <p className="text-[11px] text-rose-200/90 mt-0.5">{authError}</p>
+                </div>
+              </div>
+            )}
+
             {/* Google OAuth Option */}
             <button
               onClick={handleGoogleLogin}
-              className="w-full py-3 px-4 bg-white hover:bg-neutral-200 text-black rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2.5 shadow"
+              disabled={googleLoading}
+              className="w-full py-3 px-4 bg-white hover:bg-neutral-200 disabled:opacity-70 text-black rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2.5 shadow"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Continue with Google</span>
+              {googleLoading ? (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  <span>Connecting to Google...</span>
+                </div>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
+                </>
+              )}
             </button>
 
             <div className="my-5 flex items-center gap-3">
               <span className="flex-1 h-[1px] bg-neutral-800" />
               <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-                Or Continue with Email
+                Or Continue with Customer Email
               </span>
               <span className="flex-1 h-[1px] bg-neutral-800" />
             </div>
@@ -472,20 +513,14 @@ export default function Navbar({ onSelectFragrance }: { onSelectFragrance?: (f: 
                 type="submit"
                 className="w-full py-3 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase tracking-wider text-xs rounded-xl shadow transition"
               >
-                Sign In to Account
+                Sign In as Customer
               </button>
             </form>
 
-            {/* Quick Login for Sajith (Store Owner) */}
-            <div className="mt-5 pt-4 border-t border-neutral-800/80">
-              <button
-                onClick={handleQuickLoginAsAdmin}
-                className="w-full py-2.5 px-3 bg-neutral-900 hover:bg-neutral-800 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-mono font-medium transition flex items-center justify-center gap-2"
-                title="Instant login with sajith.kasp@gmail.com"
-              >
-                <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span>Sign In as Store Owner (sajith.kasp@gmail.com)</span>
-              </button>
+            <div className="mt-4 pt-3 border-t border-neutral-800/80 text-center">
+              <p className="text-[10px] font-mono text-neutral-500">
+                🔒 Store Administration is strictly reserved for verified Google accounts.
+              </p>
             </div>
           </div>
         </div>

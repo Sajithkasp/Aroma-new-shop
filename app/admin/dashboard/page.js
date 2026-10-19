@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { TABLES, TABLE_CATEGORIES } from '@/lib/adminTableConfigs'
+import { supabase } from '@/lib/supabase'
+import { APP_CONFIG } from '@/lib/config'
 import * as Icons from 'lucide-react'
 
 // Known tables with active data reported by user
@@ -27,6 +29,35 @@ const TABLES_WITH_DATA = new Set([
 export default function AdminDashboardPage() {
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
+  const [authorized, setAuthorized] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    const verifyAccess = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user?.email?.toLowerCase().trim() === APP_CONFIG.ADMIN_EMAIL.toLowerCase().trim()) {
+          setAuthorized(true)
+          setCheckingAuth(false)
+          return
+        }
+
+        const stored = localStorage.getItem('aroma_auth_customer')
+        if (stored) {
+          const u = JSON.parse(stored)
+          if (u.is_verified_oauth && u.email?.toLowerCase().trim() === APP_CONFIG.ADMIN_EMAIL.toLowerCase().trim()) {
+            setAuthorized(true)
+          }
+        }
+      } catch {
+        // unauthorized
+      } finally {
+        setCheckingAuth(false)
+      }
+    }
+
+    verifyAccess()
+  }, [])
 
   const categories = useMemo(() => {
     return ['ALL', ...Object.values(TABLE_CATEGORIES)]
@@ -51,6 +82,60 @@ export default function AdminDashboardPage() {
     const empty = total - withData
     return { total, withData, empty }
   }, [])
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center text-neutral-400 font-mono text-xs">
+        <div className="flex items-center gap-2">
+          <span className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <span>Verifying Store Owner Atelier Credentials...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!authorized) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 text-neutral-200">
+        <div className="w-full max-w-md p-8 rounded-3xl bg-[#0a0a0a] border border-neutral-800 text-center space-y-5 shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center mx-auto text-amber-400">
+            <Icons.ShieldAlert className="w-7 h-7" />
+          </div>
+          <div>
+            <h2 className="text-xl font-serif text-white">Store Owner Access Required</h2>
+            <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
+              This administrative atelier is strictly restricted to verified owner{' '}
+              <span className="text-amber-400 font-mono font-semibold">{APP_CONFIG.ADMIN_EMAIL}</span>.
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-3">
+            <button
+              onClick={() => {
+                supabase.auth.signInWithOAuth({
+                  provider: 'google',
+                  options: {
+                    redirectTo: typeof window !== 'undefined' ? window.location.href : '',
+                    queryParams: { prompt: 'select_account' }
+                  }
+                })
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg"
+            >
+              <span>Sign in with Google as Store Owner</span>
+            </button>
+
+            <Link
+              href="/"
+              className="block w-full py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 hover:text-white text-xs transition"
+            >
+              ← Return to Fragrance Boutique
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-100 font-sans pb-24">
