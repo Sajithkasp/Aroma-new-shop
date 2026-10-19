@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-black: #050505;
+    --color-brand-dark: #0a0a0a;
+      --color-brand-card: #111111;
+        --color-brand-border: #1f1f1f;
+
+          /* Future Hero Slider Animations - ඔක්කොම මෙතන */
+            --animate-zoom-slow: zoomSlow 8s ease-in-out infinite alternate;
+              --animate-zoom-fast: zoomSlow 5s ease-in-out infinite alternate;
+                --animate-fade-up: fadeUp 0.8s ease-out;
+                  --animate-slide-in: slideIn 0.8s ease-out;
+                    --animate-progress: progressBar var(--duration, 5s) linear;
+                    }
+
+                    @keyframes zoomSlow {
+                      0% { transform: scale(1); }
+                        100% { transform: scale(1.12); }
+                        }
+
+                        @keyframes fadeUp {
+                          0% { opacity: 0; transform: translateY(20px); }
+                            100% { opacity: 1; transform: translateY(0); }
+                            }
+
+                            @keyframes slideIn {
+                              0% { opacity: 0; transform: translateX(30px); }
+                                100% { opacity: 1; transform: translateX(0); }
+                                }
+
+                                @keyframes progressBar {
+                                  0% { width: 0%; }
+                                    100% { width: 100%; }
+                                    }
+
+                                    /* Base */
+                                    body {
+                                      background: #050505;
+                                        color: white;
+                                        }
+                                        

@@ -1,0 +1,8 @@
+{
+  "name": "Remix Aroma-new-v-1",
+  "description": "Imported from GitHub: Sajithkasp/Aroma-new-v-1",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
