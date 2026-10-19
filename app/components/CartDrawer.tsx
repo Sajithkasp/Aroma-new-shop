@@ -16,7 +16,7 @@ import {
   Mail,
   Check
 } from 'lucide-react'
-import { getAvatarFromEmail } from '@/lib/siteConfigStore'
+import { getAvatarFromEmail, savePlacedOrder, PlacedOrder } from '@/lib/siteConfigStore'
 import { APP_CONFIG } from '@/lib/config'
 
 const SRI_LANKA_DISTRICTS = [
@@ -167,24 +167,6 @@ export default function CartDrawer() {
     setIsCheckoutOpen(true)
   }
 
-  const handleQuickAdminLogin = () => {
-    const adminUser: AuthUser = {
-      id: 'admin-sajith',
-      email: APP_CONFIG.ADMIN_EMAIL,
-      name: 'Sajith (Store Owner)',
-      avatar_url: getAvatarFromEmail(APP_CONFIG.ADMIN_EMAIL, 'Sajith')
-    }
-    setCurrentUser(adminUser)
-    localStorage.setItem('aroma_auth_customer', JSON.stringify(adminUser))
-    setFormData((prev) => ({
-      ...prev,
-      fullName: 'Sajith',
-      email: APP_CONFIG.ADMIN_EMAIL
-    }))
-    setShowAuthGate(false)
-    setIsCheckoutOpen(true)
-  }
-
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentUser) {
@@ -200,8 +182,38 @@ export default function CartDrawer() {
     setIsSubmitting(true)
     const generatedOrderId = 'ARM-' + Math.floor(100000 + Math.random() * 900000)
 
+    const fullOrderData: PlacedOrder = {
+      id: `ord-${Date.now()}`,
+      order_number: generatedOrderId,
+      customer_name: formData.fullName,
+      customer_phone: formData.phone,
+      customer_email: currentUser.email || formData.email || undefined,
+      shipping_address: `${formData.address}, ${formData.city}`,
+      district: formData.district,
+      payment_method: formData.paymentMethod,
+      payment_status: formData.paymentMethod === 'Cash on Delivery (COD)' ? 'pending' : 'awaiting_transfer',
+      order_status: 'pending',
+      subtotal: subtotal,
+      discount: discountAmount,
+      shipping_fee: deliveryFee,
+      total_amount: total,
+      notes: formData.notes || undefined,
+      items: items.map((i) => ({
+        id: i.id,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        volume_ml: i.volume_ml,
+        image_url: i.image_url
+      })),
+      created_at: new Date().toISOString()
+    }
+
+    // 1. Save immediately to client store so it appears in Admin instantly
+    savePlacedOrder(fullOrderData)
+
     try {
-      // Save to Supabase orders table
+      // 2. Save to Supabase orders table
       await supabase.from('orders').insert([
         {
           order_number: generatedOrderId,
@@ -212,7 +224,7 @@ export default function CartDrawer() {
           district: formData.district,
           payment_method: formData.paymentMethod,
           payment_status: formData.paymentMethod === 'Cash on Delivery (COD)' ? 'pending' : 'awaiting_transfer',
-          order_status: 'confirmed',
+          order_status: 'pending',
           subtotal: subtotal,
           discount: discountAmount,
           shipping_fee: deliveryFee,
@@ -235,13 +247,11 @@ export default function CartDrawer() {
       } catch {
         // Fallback for order items
       }
-
-      setOrderSuccess({ id: generatedOrderId, name: formData.fullName })
-      clearCart()
     } catch {
+      // Offline fallback: order already saved in local store
+    } finally {
       setOrderSuccess({ id: generatedOrderId, name: formData.fullName })
       clearCart()
-    } finally {
       setIsSubmitting(false)
     }
   }
@@ -470,17 +480,6 @@ export default function CartDrawer() {
                   Sign In & Continue to Delivery
                 </button>
               </form>
-
-              {/* Quick store owner sign-in */}
-              <div className="pt-3 border-t border-neutral-800/80">
-                <button
-                  type="button"
-                  onClick={handleQuickAdminLogin}
-                  className="w-full py-2.5 px-3 bg-neutral-900 hover:bg-neutral-800 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-mono transition text-center"
-                >
-                  👑 Sign In as Store Owner ({APP_CONFIG.ADMIN_EMAIL})
-                </button>
-              </div>
             </div>
           ) : isCheckoutOpen ? (
             /* 3. CHECKOUT FORM VIEW */

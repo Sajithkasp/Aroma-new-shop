@@ -1,7 +1,7 @@
-"use client"
+'use client'
 
-import TableEntityManager from "@/app/components/admin/TableEntityManager"
+import MediaLibraryPage from '../media-library/page'
 
-export default function mediaPage() {
-  return <TableEntityManager tableSlug="media" />
+export default function MediaPage() {
+  return <MediaLibraryPage />
 }

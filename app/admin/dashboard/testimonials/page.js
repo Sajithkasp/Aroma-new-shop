@@ -1,7 +1,7 @@
-"use client"
+'use client'
 
-import TableEntityManager from "@/app/components/admin/TableEntityManager"
+import ReviewsManagementPage from '../reviews/page'
 
-export default function testimonialsPage() {
-  return <TableEntityManager tableSlug="testimonials" />
+export default function TestimonialsPage() {
+  return <ReviewsManagementPage />
 }

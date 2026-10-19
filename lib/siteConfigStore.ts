@@ -413,7 +413,7 @@ export async function addCustomerReview(review: ReviewItem): Promise<boolean> {
       id: review.id || `rev-${Date.now()}`,
       avatar_url: review.avatar_url || getAvatarFromEmail(review.email, review.name),
       date: review.date || 'Just now',
-      verified: true
+      verified: review.verified !== undefined ? review.verified : true
     }
 
     const updatedConfig: SiteConfig = {
@@ -434,7 +434,7 @@ export async function addCustomerReview(review: ReviewItem): Promise<boolean> {
           rating: review.rating,
           comment: review.review,
           product_id: review.scent,
-          is_verified_purchase: true,
+          is_verified_purchase: review.verified ?? true,
           is_approved: true
         }
       ])
@@ -446,6 +446,206 @@ export async function addCustomerReview(review: ReviewItem): Promise<boolean> {
   } catch (e) {
     console.error('Error adding customer review:', e)
     return false
+  }
+}
+
+export async function deleteCustomerReview(reviewId: string): Promise<boolean> {
+  try {
+    const current = getStoredSiteConfig()
+    const updatedItems = current.testimonials.items.filter((r) => r.id !== reviewId)
+    const updatedConfig: SiteConfig = {
+      ...current,
+      testimonials: {
+        ...current.testimonials,
+        items: updatedItems
+      }
+    }
+    await saveAndPublishConfig(updatedConfig)
+
+    try {
+      await supabase.from('reviews').delete().eq('id', reviewId)
+    } catch {
+      // ignore
+    }
+    return true
+  } catch (e) {
+    console.error('Error deleting review:', e)
+    return false
+  }
+}
+
+export async function toggleVerifyCustomerReview(reviewId: string): Promise<boolean> {
+  try {
+    const current = getStoredSiteConfig()
+    const updatedItems = current.testimonials.items.map((r) => {
+      if (r.id === reviewId) {
+        return { ...r, verified: !r.verified }
+      }
+      return r
+    })
+    const updatedConfig: SiteConfig = {
+      ...current,
+      testimonials: {
+        ...current.testimonials,
+        items: updatedItems
+      }
+    }
+    await saveAndPublishConfig(updatedConfig)
+    return true
+  } catch (e) {
+    console.error('Error toggling review verification:', e)
+    return false
+  }
+}
+
+// -------------------------------------------------------------
+// Placed Orders Management (Supabase + LocalStorage Fallback)
+// -------------------------------------------------------------
+export interface PlacedOrderItem {
+  id?: string
+  name: string
+  price: number
+  quantity: number
+  volume_ml: number
+  image_url?: string
+}
+
+export interface PlacedOrder {
+  id: string
+  order_number: string
+  customer_name: string
+  customer_phone: string
+  customer_email?: string
+  shipping_address: string
+  district: string
+  payment_method: string
+  payment_status: 'pending' | 'paid' | 'awaiting_transfer'
+  order_status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  subtotal: number
+  discount: number
+  shipping_fee: number
+  total_amount: number
+  notes?: string
+  items: PlacedOrderItem[]
+  created_at: string
+}
+
+const ORDERS_KEY = 'aroma_placed_orders'
+export const ORDERS_SYNC_EVENT = 'aroma_orders_sync'
+
+export function getStoredOrders(): PlacedOrder[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch {
+    // fallback
+  }
+
+  // Pre-seed with realistic sample orders so Store Owner sees the flow immediately
+  const sampleOrders: PlacedOrder[] = [
+    {
+      id: 'ord-101',
+      order_number: 'ARM-882194',
+      customer_name: 'Dr. Senaka Wickramasinghe',
+      customer_phone: '+94 77 912 3456',
+      customer_email: 'senaka.w@gmail.com',
+      shipping_address: 'No. 18, Guildford Crescent, Colombo 07',
+      district: 'Colombo',
+      payment_method: 'Cash on Delivery (COD)',
+      payment_status: 'pending',
+      order_status: 'processing',
+      subtotal: 18500,
+      discount: 0,
+      shipping_fee: 0,
+      total_amount: 18500,
+      notes: 'Please dispatch before 4 PM. Fragile flacon.',
+      items: [
+        {
+          name: 'Ceylon Royal Oud',
+          price: 18500,
+          quantity: 1,
+          volume_ml: 50,
+          image_url: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=85'
+        }
+      ],
+      created_at: new Date(Date.now() - 3600000 * 4).toISOString()
+    },
+    {
+      id: 'ord-102',
+      order_number: 'ARM-710492',
+      customer_name: 'Nimasha Fernando',
+      customer_phone: '+94 71 456 7890',
+      customer_email: 'nimasha.f@outlook.com',
+      shipping_address: '42/1, Beach Road, Mount Lavinia',
+      district: 'Colombo',
+      payment_method: 'Cash on Delivery (COD)',
+      payment_status: 'pending',
+      order_status: 'shipped',
+      subtotal: 31000,
+      discount: 3100,
+      shipping_fee: 0,
+      total_amount: 27900,
+      notes: 'Leave at security desk if unavailable.',
+      items: [
+        {
+          name: 'Cinnamon Quills & Taif Rose',
+          price: 16500,
+          quantity: 1,
+          volume_ml: 50,
+          image_url: 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?w=800&auto=format&fit=crop&q=85'
+        },
+        {
+          name: 'Spice Route Bourbon',
+          price: 14500,
+          quantity: 1,
+          volume_ml: 50,
+          image_url: 'https://images.unsplash.com/photo-1594035910387-fea47794261f?w=800&auto=format&fit=crop&q=85'
+        }
+      ],
+      created_at: new Date(Date.now() - 3600000 * 22).toISOString()
+    }
+  ]
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(sampleOrders))
+  }
+  return sampleOrders
+}
+
+export function savePlacedOrder(order: PlacedOrder) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = getStoredOrders()
+    const updated = [order, ...existing.filter((o) => o.id !== order.id && o.order_number !== order.order_number)]
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(updated))
+    window.dispatchEvent(new CustomEvent(ORDERS_SYNC_EVENT, { detail: updated }))
+  } catch (e) {
+    console.error('Error saving order locally:', e)
+  }
+}
+
+export function updateOrderStatus(orderId: string, status: PlacedOrder['order_status']) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = getStoredOrders()
+    const updated = existing.map((o) => (o.id === orderId || o.order_number === orderId ? { ...o, order_status: status } : o))
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(updated))
+    window.dispatchEvent(new CustomEvent(ORDERS_SYNC_EVENT, { detail: updated }))
+  } catch (e) {
+    console.error('Error updating order status:', e)
+  }
+}
+
+export function deleteStoredOrder(orderId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = getStoredOrders()
+    const updated = existing.filter((o) => o.id !== orderId && o.order_number !== orderId)
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(updated))
+    window.dispatchEvent(new CustomEvent(ORDERS_SYNC_EVENT, { detail: updated }))
+  } catch (e) {
+    console.error('Error deleting order:', e)
   }
 }
 

@@ -104,14 +104,48 @@ export default function CustomerHomePage() {
           })
           setProducts(mapped)
         } else {
-          setProducts(AROMA_FRAGRANCES)
+          const local = typeof window !== 'undefined' ? localStorage.getItem('aroma_custom_products') : null
+          if (local) {
+            try {
+              setProducts(JSON.parse(local))
+            } catch {
+              setProducts(AROMA_FRAGRANCES)
+            }
+          } else {
+            setProducts(AROMA_FRAGRANCES)
+          }
         }
       } catch {
-        setProducts(AROMA_FRAGRANCES)
+        const local = typeof window !== 'undefined' ? localStorage.getItem('aroma_custom_products') : null
+        if (local) {
+          try {
+            setProducts(JSON.parse(local))
+          } catch {
+            setProducts(AROMA_FRAGRANCES)
+          }
+        } else {
+          setProducts(AROMA_FRAGRANCES)
+        }
       }
     }
 
     fetchSupabaseProducts()
+
+    const handleSync = (e: any) => {
+      if (e.detail) {
+        setProducts(e.detail)
+      } else {
+        const local = localStorage.getItem('aroma_custom_products')
+        if (local) {
+          try {
+            setProducts(JSON.parse(local))
+          } catch {}
+        }
+      }
+    }
+
+    window.addEventListener('aroma_products_sync', handleSync)
+    return () => window.removeEventListener('aroma_products_sync', handleSync)
   }, [])
 
   // Filter & sort logic
