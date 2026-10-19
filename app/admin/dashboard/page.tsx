@@ -1525,15 +1525,67 @@ export default function AdminDashboardPage() {
                             className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs flex items-center gap-2 border border-neutral-700 transition"
                           >
                             <Camera className="w-4 h-4 text-amber-400" />
-                            <span>Choose from Gallery / Camera</span>
+                            <span>Choose from Phone/PC Gallery or Camera</span>
                           </button>
                           <input
                             type="text"
                             value={pImageUrl}
                             onChange={(e) => setPImageUrl(e.target.value)}
-                            placeholder="Or enter Image URL..."
+                            placeholder="Or paste direct image URL..."
                             className="w-full px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white placeholder-neutral-500 font-mono text-[11px]"
                           />
+                        </div>
+                      </div>
+
+                      {/* Pick from Media Library Assets */}
+                      {mediaAssets.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-neutral-800/80">
+                          <label className="block text-[11px] text-neutral-400 mb-1.5 font-medium">
+                            Or pick from your Uploaded Media Gallery:
+                          </label>
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                            {mediaAssets.map((asset) => (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                onClick={() => {
+                                  setPImageUrl(asset.url)
+                                  showToast(`✓ Selected photo "${asset.name}"`)
+                                }}
+                                className={`w-12 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${
+                                  pImageUrl === asset.url ? 'border-amber-400 scale-105' : 'border-neutral-800 hover:border-neutral-600'
+                                }`}
+                                title={asset.name}
+                              >
+                                <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pick from Luxury Presets */}
+                      <div className="mt-2">
+                        <label className="block text-[11px] text-neutral-400 mb-1.5 font-medium">
+                          Or pick from Curated Flacon Presets:
+                        </label>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                          {PRESET_FLACONS.map((flacon) => (
+                            <button
+                              key={flacon.name}
+                              type="button"
+                              onClick={() => {
+                                setPImageUrl(flacon.url)
+                                showToast(`✓ Selected ${flacon.name}`)
+                              }}
+                              className={`w-12 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${
+                                pImageUrl === flacon.url ? 'border-amber-400 scale-105' : 'border-neutral-800 hover:border-neutral-600'
+                              }`}
+                              title={flacon.name}
+                            >
+                              <img src={flacon.url} alt={flacon.name} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </div>
